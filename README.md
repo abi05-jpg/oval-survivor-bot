@@ -1,37 +1,46 @@
-# Oval Survivor V5 — evasive/healing experiment
+# Oval Survivor V6 — precision-aim experiment
 
-**Aiming for a better competition score is experimental, not guaranteed.**
-Measured scores shared so far: V1 **1.77**, V2 **0.98**, V3 **1.88**; V4's score has not been shared. V5 has no measured match score yet.
+**Baseline:** V3 scored 1.88 in your competition practice runs. V5 scored 0.42. V6 is a direct modification of V3, *not* V5.
 
-## Design differences from V3
+**Hypothesis:** V3 sometimes fires gun bullets with its torso as much as 0.14 radians away from the target's predicted position. At distance, that is a very large miss. Calculate the projectile intercept with a moving target and require an aim error that scales with distance before firing. This may save ammo and improve damage; only an actual match score can confirm it.
 
-- **Healing and disengagement:** backs off when damaged, avoids shooting at distant opponents while recovering. The game only regenerates HP after 5s without dealing or taking damage. At close range the bot may still defend itself.
-- **Enemy group avoidance:** scores 24 possible movement headings instead of fleeing only the single closest opponent.
-- **Safe-zone timing:** doesn't run to the centre at the start; begins moving when the shrink deadline and estimated walk time demand it, with a margin for obstructions.
-- **Emergency boosting:** spends energy to escape threatening pursuers rather than only once HP is already low.
-- **Combat:** intercept-based gun leading; opportunistic crate/drone farming; laser/lightning/mortar support; avoids unnecessary battles with the coordinated house squad.
-- **Less noise:** can remain stationary and scan when safe, which is less audible than walking/boosting.
+Changes in V6:
+- Constant-velocity interception solution for the standard gun (3D).
+- Distance-sensitive aim tolerance for gun firing.
+- V3's movement, boosting, zone logic, loot, upgrades, and reloading preserved.
+- V3's laser/lightning logic preserved other than a potentially slightly different target aim direction.
 
-## Files
+## Files to put in the GitHub repository ROOT
 
-Place `example_bot.py`, `mechfight.py` and `Dockerfile` at the ROOT of your existing public GitHub repository. The README is optional. Commit and resubmit using the same repository URL at https://joinbuilders.org/buildathon.
+- `example_bot.py`
+- `mechfight.py`
+- `Dockerfile`
 
-Don't remove V3's older commit: V3's 1.88 is the best **measured** score so far. The competition ranks the best valid entry.
+`README.md` is optional. These files should be at the root, not inside another folder.
 
-## What has actually been tested
+## How to check locally
 
-- Python 3.13 syntax check
-- Local `check/check.py` protocol check: **PASS**, 300 of 300 responses, 0 late, 0 invalid, max reported response time **0.5 ms** on this machine
-- A few synthetic scenarios testing whether it stays put, moves to the zone before shrinking, and escapes when threatened
+With the official kit extracted, from the kit root:
 
-These tests **do not simulate fights**. There is no match simulator in the kit. I could not test inside a Docker match sandbox. Actual battle performance needs an official submission.
-
-## Testing locally
-
-From the extracted official `mechfight-kit` directory:
-
-```bash
-python3 check/check.py -- python3 -u /path/to/oval_survivor_v5/example_bot.py
+```
+python3 check/check.py -- python3 -u /path/to/v6/example_bot.py
 ```
 
-The competition itself performs a similar test and then runs practice matches.
+If Docker is installed:
+
+```
+docker build -t oval-survivor-v6 /path/to/v6
+python3 check/check.py --map-dir /arena -- docker run --rm -i --network none --cpus 1 --memory 512m --read-only --tmpfs /tmp:rw,size=64m --user 65534:65534 -v "$PWD/arena:/arena:ro" oval-survivor-v6
+```
+
+## Tests actually run in this development environment
+
+- Python syntax compilation: passed.
+- Official checker with 300 recorded observations: 300/300 valid, 0 late.
+- Comparison with V3 on the same *recorded observations*: all 300 decisions for movement, boost, jump, reload, loot and upgrade choice identical. Gun trigger on 144 ticks in V3 versus 127 in V6. Observations do not react to actions, so these numbers are **not** a performance score.
+- Mathematical interception unit checks: passed.
+- Docker sandbox / live competition matches: **not run** here.
+
+## What score to compare
+
+Submit the new commit to the Builders Buildathon and compare with **1.88**. Preserve the V3 commit so you can revert if V6 is worse. Do not infer improvement from the protocol test alone.
