@@ -1,7 +1,7 @@
-"""Oval Survivor V6 — controlled gun-accuracy experiment on V3 (score 1.88).
+"""Oval Survivor V7 — controlled target-selection experiment on V3.
 
-Preserves V3 movement, boosting, target selection, loot, and weapon rules.
-Only changes predictive gun aim and alignment thresholds.
+Same V3 movement, boost, loot, upgrades and firing mechanics.
+Only alter which target gets aimed at when an enemy is distant.
 """
 import math
 import mechfight as mf
@@ -33,33 +33,8 @@ def choice(offer):
                key=lambda i: scores.get(offer['choices'][i]['id'], 1))
 
 
-def intercept_time(relative, velocity, speed):
-    """Earliest nonnegative time where a straight-line bullet can reach a
-    constant-velocity target. Fall back to range/speed when interception is
-    mathematically impossible; bound to sane within-gun-range duration.
-    """
-    rx, ry, rz = relative
-    vx, vy, vz = velocity
-    a = vx * vx + vy * vy + vz * vz - speed * speed
-    b = 2.0 * (rx * vx + ry * vy + rz * vz)
-    c = rx * rx + ry * ry + rz * rz
-    if c < 1e-9:
-        return 0.0
-    if abs(a) < 1e-8:
-        t = -c / b if abs(b) > 1e-8 else -1.0
-        return t if t >= 0.0 else math.sqrt(c) / speed
-    discr = b * b - 4 * a * c
-    if discr >= 0.0:
-        root = math.sqrt(discr)
-        t1, t2 = (-b - root) / (2 * a), (-b + root) / (2 * a)
-        candidates = [t for t in (t1, t2) if t >= 0.0]
-        if candidates:
-            return min(candidates)
-    return math.sqrt(c) / speed
-
-
 class Bot:
-    name = 'Oval Survivor V6'
+    name = 'Oval Survivor V7'
 
     def __init__(self, hello: mf.Hello):
         self.reach = hello['config']['loot']['pickup_radius']
@@ -194,10 +169,18 @@ class Bot:
         # Keep V1's combat approach; improve target selection and aiming.
         # Do not suppress attacks while injured if the enemy is still close.
         target = None
-        if nearest and enemy_dist < 200:
+        # V3 gave *every* visible enemy inside 200 m priority over a crate,
+        # even when we were already positioned beside that crate. In practice
+        # this blocks easy cube/upgrade collection. V7 only changes priority
+        # when the enemy is distant; close threats still take precedence.
+        safe_crate = (farm if goal_kind == 'crate' and farm is not None
+                      and distance(pos, farm['pos']) < 55 else None)
+        if nearest and enemy_dist < 120:
             target = nearest
-        elif farm and goal_kind == 'crate' and distance(pos, farm['pos']) < 55:
-            target = farm
+        elif safe_crate is not None and enemy_dist >= 120:
+            target = safe_crate
+        elif nearest and enemy_dist < 200:
+            target = nearest
         else:
             # Opportunistic farming, only when opponents cannot immediately engage.
             if enemy_dist > 140 and hp > 0.80:
@@ -213,28 +196,21 @@ class Bot:
             target_dist = distance(pos, tp)
             target_is_enemy = target.get('kind') == 'mech'
             v = target.get('vel', [0, 0, 0])
-            speed = max(15.0, (gun or {}).get('stats', {}).get('speed', 252.0))
-            height = (4.5 if target_is_enemy else 1.5)
-            muzzle = z + me['stats'].get('muzzle_height', 7.0)
-            relative = (tp[0] - x, tp[1] - y, tp[2] + height - muzzle)
-            travel = min(1.05, intercept_time(relative, v, speed))
+            speed = (gun or {}).get('stats', {}).get('speed', 252.0)
+            travel = min(1.0, target_dist / max(15.0, speed))
             tx = tp[0] + v[0] * travel
             ty = tp[1] + v[1] * travel
+            height = (4.5 if target_is_enemy else 1.5)
             tz = tp[2] + height + v[2] * travel
+            muzzle = z + me['stats'].get('muzzle_height', 7.0)
             yaw = math.atan2(ty - y, tx - x)
-            aim_dist = max(1.0, math.hypot(tx - x, ty - y))
-            pitch = math.atan2(tz - muzzle, aim_dist)
+            pitch = math.atan2(tz - muzzle, max(1.0, math.hypot(tx - x, ty - y)))
             action['aim'] = [yaw, max(-0.70, min(1.20, pitch))]
             aerr = abs(delta(me['aim'][0], yaw))
             perr = abs(me['aim'][1] - action['aim'][1])
-            # V3's 0.14 rad fire window allowed shots several metres wide at
-            # long range. Constrain by the mech's angular size instead.
-            yaw_tol = max(0.025, min(0.11, 1.2 * math.atan2(2.5, aim_dist)))
-            pitch_tol = max(0.036, min(0.14, 1.2 * math.atan2(4.0, aim_dist)))
-            precise = aerr < yaw_tol and perr < pitch_tol
-            aligned = aerr < 0.14 and perr < 0.14  # unchanged V3 secondary-weapon behaviour
+            aligned = aerr < 0.14 and perr < 0.14
             if gun and gun['kind'] == 'gun':
-                action['fire'][0] = bool(precise and target_dist < gun['stats'].get('range', 230) - 8)
+                action['fire'][0] = bool(aligned and target_dist < gun['stats'].get('range', 230) - 8)
             if sec and target_is_enemy:
                 if sec['kind'] == 'lightning':
                     action['fire'][1] = bool(aerr < 0.17 and
